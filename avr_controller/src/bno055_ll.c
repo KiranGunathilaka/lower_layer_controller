@@ -136,6 +136,15 @@ static bool bno055_set_mode(uint8_t mode)
     return bno055_write8(0x3D, mode); /* BNO055_OPR_MODE_ADDR */
 }
 
+void bno055_gpio_reset(void)
+{
+	BNO_RST_DDR  |=  (1<<BNO_RST_PIN);  /* drive pin */
+	BNO_RST_PORT &= ~(1<<BNO_RST_PIN);  /* pull low  */
+	_delay_ms(10);
+	BNO_RST_PORT |=  (1<<BNO_RST_PIN);  /* release   */
+	_delay_ms(650);                     /* wait for reboot */
+}
+
 bool bno055_init(void)
 {
     twi_init();
@@ -177,6 +186,18 @@ void bno055_get_omega(int16_t *gx, int16_t *gy, int16_t *gz)
 		*gx = (int16_t)(buf[0] | ((uint16_t)buf[1] << 8));
 		*gy = (int16_t)(buf[2] | ((uint16_t)buf[3] << 8));
 		*gz = (int16_t)(buf[4] | ((uint16_t)buf[5] << 8));
+	}
+}
+
+/* 1 LSB = 1/100 m s-2   */
+void bno055_get_accel(int16_t *ax, int16_t *ay, int16_t *az)
+{
+	uint8_t buf[6];
+	if (bno055_read(0x28, buf, 6))              /* LINEAR_ACCEL_DATA_X_LSB */
+	{
+		*ax = (int16_t)(buf[0] | ((uint16_t)buf[1] << 8));
+		*ay = (int16_t)(buf[2] | ((uint16_t)buf[3] << 8));
+		*az = (int16_t)(buf[4] | ((uint16_t)buf[5] << 8));
 	}
 }
 

@@ -138,6 +138,20 @@ void motion_reset_drive_system(void)
 	motors_enable_all(true);
 }
 
+void profile_soft_reset(Profile *p)
+{
+	cli();
+	p->position = 0.0f;
+	sei();
+}
+
+void motion_SOFT_reset_drive_system(void)
+{
+	encoder_odometry_reset();
+	profile_soft_reset(&motionType.forward);
+	profile_soft_reset(&motionType.rotation);
+}
+
 void motion_stop(void) { motors_stop_all(); }
 
 float motion_position(void) { return motionType.forward.position; }

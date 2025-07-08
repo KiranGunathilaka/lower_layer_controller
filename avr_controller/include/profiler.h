@@ -53,6 +53,8 @@ void profile_start(Profile *p, float distance, float top_s, float final_s, float
 void profile_stop(Profile *p);
 void profile_update(Profile *p);
 
+void profile_soft_reset(Profile *p); //only resets distance
+
 /* ====================  Motion facade =================== */
 void  motion_reset_drive_system(void);
 void  motion_stop(void);
@@ -70,5 +72,7 @@ bool  motion_turn_finished(void);
 void  motion_update(void);
 void  motion_wait_until_position(float pos_mm);
 void  motion_wait_until_distance(float dist_mm);
+
+void motion_SOFT_reset_drive_system(void);
 
 #endif // PROFILER_H_

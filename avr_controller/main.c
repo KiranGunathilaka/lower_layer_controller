@@ -36,20 +36,33 @@ static uint16_t rx_last_omega;
 static float rx_lin_acc; // mm/s
 static float rx_ang_acc; // deg/s
 
+uint8_t id;
 
-typedef enum{
-	AUTONOMOUS = 0,
-	TELEOPERATOR = 1,
+typedef enum
+{
+    AUTONOMOUS = 0,
+    TELEOPERATOR = 1,
 } controlMode;
-static uint8_t control_mode = AUTONOMOUS; 
+static uint8_t control_mode = AUTONOMOUS;
 
-typedef enum{
-	DEBUG_OFF = 0,
-	MOTION_DEBUG = 1,
-	RX_ECHO =2,
-	MD_AND_ECHO = 3,
+typedef enum
+{
+    DEBUG_OFF = 0,
+    MOTION_DEBUG = 1,
+    RX_ECHO = 2,
+    MD_AND_ECHO = 3,
 } debugMode;
-static uint8_t debug_mode = MOTION_DEBUG; 
+static uint8_t debug_mode =RX_ECHO;
+
+typedef enum
+{
+    CONSTANT = 0,
+    DECELERATING = 1,
+    ACCELERATING = 2,
+    NONETELEOP = 3,
+} teleOpStates;
+static uint8_t teleStates = NONETELEOP;
+static uint8_t last_command = 0;
 
 static bool f, b, l, r;
 
@@ -92,6 +105,10 @@ int main(void)
     analog_init();
     twi_init();
 
+    _delay_ms(100);
+    bno055_gpio_reset();
+    _delay_ms(100);
+
     if (!bno055_init())
     {
         m_usb_tx_string("IMU Failed\r\n");
@@ -116,39 +133,69 @@ int main(void)
             encoder_odometry_update();
             motion_update();
 
+            // bool imu_ok = bno055_read8(0x00, &id) && (id == 0xA0);
+            // if (imu_ok) bno055_gpio_reset();
+
             if (!emerg)
             {
-                if (determineFinishnes == BOTH && motion_turn_finished() && motion_move_finished())
+                if (control_mode == AUTONOMOUS)
                 {
-                    profile_done = true;
-                    motion_reset_drive_system();
-                    determineFinishnes = NONE;
+                    if (determineFinishnes == BOTH && motion_turn_finished() && motion_move_finished())
+                    {
+                        profile_done = true;
+                        motion_reset_drive_system();
+                        determineFinishnes = NONE;
+                    }
+                    else if (determineFinishnes == FORWARD && motion_move_finished())
+                    {
+                        profile_done = true;
+                        motion_reset_drive_system();
+                        determineFinishnes = NONE;
+                    }
+                    else if (determineFinishnes == ROTATION && motion_turn_finished())
+                    {
+                        profile_done = true;
+                        motion_reset_drive_system();
+                        determineFinishnes = NONE;
+                    }
+                    else
+                    {
+                        motors_update(motion_velocity(), motion_omega());
+                    }
                 }
-                else if (determineFinishnes == FORWARD && motion_move_finished())
+                else if (control_mode == TELEOPERATOR)
                 {
-                    profile_done = true;
-                    motion_reset_drive_system();
-                    determineFinishnes = NONE;
-                }
-                else if (determineFinishnes == ROTATION && motion_turn_finished())
-                {
-                    profile_done = true;
-                    motion_reset_drive_system();
-                    determineFinishnes = NONE;
-                }
-                else
-                {
-                    motors_update(motion_velocity(), motion_omega());
+                    if ((determineFinishnes == FORWARD && motion_move_finished()) ||  (determineFinishnes == ROTATION && motion_turn_finished()))
+                    {
+                        profile_done = true;
+
+                        if (teleStates == ACCELERATING)
+                        {
+                            teleStates = CONSTANT;
+                        }
+                        else if (teleStates == DECELERATING)
+                        {
+                            teleStates = NONETELEOP;
+                        }
+                    }
+
+                    if (teleStates == CONSTANT)
+                    {
+                        motors_update(motion_velocity(), motion_omega());
+                    }
                 }
             }
             else
             {
                 motors_stop_all();
             }
-			
-			if (debug_mode == MOTION_DEBUG || debug_mode == MD_AND_ECHO) {send_debug();}
 
-            send_telemetry(emerg, profile_done);
+            if (debug_mode == MOTION_DEBUG || debug_mode == MD_AND_ECHO)
+            {
+                //send_debug();
+            }
+
+            //send_telemetry(emerg, profile_done);
         }
     }
 }
@@ -183,15 +230,31 @@ ISR(TIMER4_COMPA_vect)
 /* ------------------- TELEMETRY SENDER (called from main) ----------------- */
 static void send_telemetry(bool emerg, bool profileDone)
 {
-    char line[100];
+    char line[180];
 
-    /* ---------- IMU ---------- */
+    /* --- orientation --- */
     int16_t h16, r16, p16;
     bno055_get_euler(&h16, &r16, &p16);
+
+    /* --- angular rate --- */
+    int16_t gx16, gy16, gz16;
+    bno055_get_omega(&gx16, &gy16, &gz16);
+
+    /* --- linear acceleration --- */
+    int16_t ax16, ay16, az16;
+    bno055_get_accel(&ax16, &ay16, &az16);
 
     float h = h16 / 16.0f;
     float r = r16 / 16.0f;
     float p = p16 / 16.0f;
+
+    const float wx = gx16 / 16.0f; /* °/s */
+    const float wy = gy16 / 16.0f;
+    const float wz = gz16 / 16.0f;
+
+    const float ax = ax16 / 100.0f; /* m/s² */
+    const float ay = ay16 / 100.0f;
+    const float az = az16 / 100.0f;
 
     // uint8_t cal = bno055_is_fully_calibrated() ? 1u : 0u;
 
@@ -207,14 +270,15 @@ static void send_telemetry(bool emerg, bool profileDone)
     int32_t encR = encoder_get_right();
 
     /* ---------- Format & ship ---------- */
-    /* Packet Structure: { Yaw Roll Pitch encoderLeft encoderRight bat1Voltage bat2Voltage LeftCliff CenterCliff RightCliff emergencyFlag }  */
+    /* Packet Structure: { Yaw Roll Pitch IMUOmega accrX accrY encoderLeft encoderRight bat1Voltage bat2Voltage LeftCliff CenterCliff RightCliff emergencyFlag }  */
     snprintf(line, sizeof(line),
-             "%3.2f %3.2f %3.2f %10ld %10ld %u %u %u %u %u %u %u\r\n", h, r, p, (long)encL, (long)encR, vbat_1, vbat_2, cliffL, cliffC, cliffR, emerg, profileDone);
+             "%3.2f %3.2f %3.2f %+3.2f %+3.2f %+3.2f %+3.2f %+3.2f %+3.2f %10ld %10ld %u %u %u %u %u %u %u\r\n", h, r, p, wx, wy, wz, ax, ay, az, (long)encL, (long)encR, vbat_1, vbat_2, cliffL, cliffC, cliffR, emerg, profileDone);
 
     usb_send_ram(line);
     m_usb_tx_push();
 }
 
+// SpdL:%+6.1f SpdR: %+6.1f Vel: %+6.1f Omg: %+5.1f dist: %+8.1f ang: %+7.1f dt: %7.1f
 static void send_debug(void)
 {
     char line[128];
@@ -229,7 +293,7 @@ static void send_debug(void)
     const float dt = encoder_loop_time_us();
 
     snprintf(line, sizeof(line),
-             "SpdL: %+6.1f SpdR: %+6.1f Vel: %+6.1f Omg: %+5.1f dist: %+8.1f ang: %+7.1f dt: %7.1f  ",
+             "%+6.1f %+6.1f %+6.1f %+5.1f %+8.1f %+7.1f %7.1f  ",
              sl, sr, v, w, d, a, dt);
 
     usb_send_ram(line);
@@ -239,22 +303,22 @@ static void send_debug(void)
 // just for debugging
 static void send_cmd_echo(void)
 {
-	/* use the existing globals filled by parse_jetson_auto() */
-	extern float rx_distance, rx_angle, rx_lin_acc, rx_ang_acc;
-	extern uint16_t rx_max_vel, rx_max_omega,
-	rx_last_vel, rx_last_omega;
+    /* use the existing globals filled by parse_jetson_auto() */
+    extern float rx_distance, rx_angle, rx_lin_acc, rx_ang_acc;
+    extern uint16_t rx_max_vel, rx_max_omega,
+        rx_last_vel, rx_last_omega;
 
-	char buf[150];
-	/* Format:  “CMD d=500.0 a=90.0 vmax=300 wmax=120 vend=0 wend=0 acc=500.0 aacc=360.0” */
-	snprintf(buf, sizeof(buf),
-	"CMD d=%g a=%g vmax=%u wmax=%u vend=%u wend=%u acc=%g aacc=%g\r\n",
-	rx_distance, rx_angle,
-	rx_max_vel, rx_max_omega,
-	rx_last_vel, rx_last_omega,
-	rx_lin_acc, rx_ang_acc);
+    char buf[150];
+    /* Format:  “CMD d=500.0 a=90.0 vmax=300 wmax=120 vend=0 wend=0 acc=500.0 aacc=360.0” */
+    snprintf(buf, sizeof(buf),
+             "CMD d=%g a=%g vmax=%u wmax=%u vend=%u wend=%u acc=%g aacc=%g\r\n",
+             rx_distance, rx_angle,
+             rx_max_vel, rx_max_omega,
+             rx_last_vel, rx_last_omega,
+             rx_lin_acc, rx_ang_acc);
 
-	usb_send_ram(buf);
-	m_usb_tx_push();
+    usb_send_ram(buf);
+    m_usb_tx_push();
 }
 
 /* ------------------- Tiny helper ------------------------- */
@@ -270,15 +334,15 @@ static uint8_t parse_jetson(const char *line)
     extern float rx_distance, rx_angle, rx_lin_acc, rx_ang_acc;
     extern uint16_t rx_max_vel, rx_max_omega, rx_last_vel, rx_last_omega;
     extern bool f, b, l, r;
-	extern uint8_t control_mode, debug_mode;
-	
+    extern uint8_t control_mode, debug_mode;
+
     uint16_t temp1, temp2, temp3, temp4;
 
     // Note: "%f" for floats, "%u" for uint16_t on AVR
     int cnt = sscanf(line,
                      "%hhu,%hhu,%f,%f,%u,%u,%u,%u,%f,%f",
                      &control_mode,
-					 &debug_mode,
+                     &debug_mode,
                      &rx_distance,
                      &rx_angle,
                      &temp1,
@@ -308,6 +372,7 @@ static uint8_t parse_jetson(const char *line)
 
 static void receive_from_jetson(void)
 {
+    
     while (m_usb_rx_available())
     {
         char c = m_usb_rx_char();
@@ -319,35 +384,112 @@ static void receive_from_jetson(void)
                 rx_buf[rx_index] = '\0';
                 if (parse_jetson(rx_buf))
                 {
-					
-					if (debug_mode == RX_ECHO || debug_mode ==MD_AND_ECHO) {send_cmd_echo();}
-						
-                    if (rx_distance != 0 && rx_angle != 0)
+
+                    if (debug_mode == RX_ECHO || debug_mode == MD_AND_ECHO)
                     {
-                        determineFinishnes = BOTH;
-                        motion_reset_drive_system();
-                        motion_start_move(rx_distance, rx_max_vel, rx_last_vel, rx_lin_acc);
-                        motion_start_turn(rx_angle, rx_max_omega, rx_last_omega, rx_ang_acc);
-                    }
-                    else if (rx_distance != 0)
-                    {
-                        determineFinishnes = FORWARD;
-                        motion_reset_drive_system();
-                        motion_start_move(rx_distance, rx_max_vel, rx_last_vel, rx_lin_acc);
-                    }
-                    else if (rx_angle != 0)
-                    {
-                        determineFinishnes = ROTATION;
-                        motion_reset_drive_system();
-                        motion_start_turn(rx_angle, rx_max_omega, rx_last_omega, rx_ang_acc);
-                    }
-                    else
-                    {
-                        determineFinishnes = NONE;
+                        //send_cmd_echo();
                     }
 
-                    profile_done = false;
+                    if (control_mode == AUTONOMOUS)
+                    {
+                        if (rx_distance != 0 && rx_angle != 0)
+                        {
+                            determineFinishnes = BOTH;
+                            motion_reset_drive_system();
+                            motion_start_move(rx_distance, rx_max_vel, rx_last_vel, rx_lin_acc);
+                            motion_start_turn(rx_angle, rx_max_omega, rx_last_omega, rx_ang_acc);
+                        }
+                        else if (rx_distance != 0)
+                        {
+                            determineFinishnes = FORWARD;
+                            motion_reset_drive_system();
+                            motion_start_move(rx_distance, rx_max_vel, rx_last_vel, rx_lin_acc);
+                        }
+                        else if (rx_angle != 0)
+                        {
+                            determineFinishnes = ROTATION;
+                            motion_reset_drive_system();
+                            motion_start_turn(rx_angle, rx_max_omega, rx_last_omega, rx_ang_acc);
+                        }
+                        else
+                        {
+                            determineFinishnes = NONE;
+                        }
+
+                        profile_done = false;
+                    }
+                    else if (control_mode == TELEOPERATOR)
+                    {
+                        uint8_t current_command = (f << 3) | (b << 2) | (l << 1) | r;
+
+                        if (current_command && (teleStates == NONETELEOP))
+                        {
+                            teleStates = ACCELERATING;
+                            motion_reset_drive_system();
+							
+                            if (f)
+                            {
+                                determineFinishnes = FORWARD;
+								send_cmd_echo();
+                                motion_start_move(FORWARD_DIST, TELEOP_SPEED, TELEOP_SPEED, TELEOP_ACC);
+                            }
+                            else if (b)
+                            {
+                                determineFinishnes = FORWARD;
+								send_cmd_echo();
+                                motion_start_move(-BACKWARD_DIST, TELEOP_SPEED, TELEOP_SPEED, TELEOP_ACC);
+                            }
+                            else if (l)
+                            {
+                                determineFinishnes = ROTATION;
+                                motion_start_turn(LEFT_TURN_ANGLE, TELEOP_OMEGA, TELEOP_OMEGA, TELEOP_ALPHA);
+                            }
+                            else if (r)
+                            {
+                                determineFinishnes = ROTATION;
+                                motion_start_turn(-RIGHT_TURN_ANGLE, TELEOP_OMEGA, TELEOP_OMEGA, TELEOP_ALPHA);
+                            }
+
+                            profile_done = false;
+                        }
+                        else if ((current_command != last_command) && (teleStates != DECELERATING) && (teleStates != NONETELEOP))
+                        {
+                            teleStates = DECELERATING;
+                            motion_SOFT_reset_drive_system();
+
+                            if (last_command & 0b1000)
+                            {
+                                determineFinishnes = FORWARD;
+                                motion_start_move(FORWARD_DIST / 2, TELEOP_SPEED, 0, TELEOP_ACC);
+                            }
+                            else if (last_command & 0b0100)
+                            {
+                                determineFinishnes = FORWARD;
+                                motion_start_move(-BACKWARD_DIST / 2, TELEOP_SPEED, 0, TELEOP_ACC);
+                            }
+                            else if (last_command & 0b0010)
+                            {
+                                determineFinishnes = ROTATION;
+                                motion_start_turn(LEFT_TURN_ANGLE / 2, TELEOP_OMEGA, 0, TELEOP_ALPHA);
+                            }
+                            else if (last_command & 0b0001)
+                            {
+                                determineFinishnes = ROTATION;
+                                motion_start_turn(-RIGHT_TURN_ANGLE / 2, TELEOP_OMEGA, 0, TELEOP_ALPHA);
+                            }
+
+                            profile_done = false;
+                        }
+                        else if ((current_command == last_command) && (teleStates == CONSTANT) && profile_done)
+                        {
+                            // Maintain constant speed smoothly
+                            motors_update(motion_velocity(), motion_omega());
+                        }
+
+                        last_command = current_command;
+                    }
                 }
+
                 rx_index = 0;
             }
         }

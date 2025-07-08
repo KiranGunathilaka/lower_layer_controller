@@ -34,9 +34,11 @@ bool bno055_init(void); /* reset + NDOF  (blocking) */
 bool bno055_write8(uint8_t reg, uint8_t val);
 bool bno055_read8(uint8_t reg, uint8_t *val);
 bool bno055_read(uint8_t reg, uint8_t *buf, uint8_t len);
+void bno055_gpio_reset(void);      /* toggle external RST pin */
 
 void bno055_get_euler(int16_t *h, int16_t *r, int16_t *p); /* deg/16 */
-void bno055_get_omega(int16_t *gx, int16_t *gy, int16_t *gz);
+void bno055_get_omega (int16_t *gx, int16_t *gy, int16_t *gz);   /* °/s·16 */
+void bno055_get_accel (int16_t *ax, int16_t *ay, int16_t *az);   /* m/s²·100 */
 bool bno055_is_fully_calibrated(void);
 
 bool bno055_apply_offsets(const uint8_t calib[22]); /* write 22-byte blob */
