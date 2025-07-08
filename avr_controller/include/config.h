@@ -217,17 +217,17 @@
 #define LOOP_TIME 10
 
 // Teleoperator Mode - Distance and Angles
-#define FORWARD_DIST         500.0f    // mm - Forward movement per command
-#define BACKWARD_DIST        500.0f    // mm - Backward movement per command
+#define FORWARD_DIST         400.0f    // mm - Forward movement per command
+#define BACKWARD_DIST        400.0f    // mm - Backward movement per command
 #define LEFT_TURN_ANGLE      45.0f     // degrees - CCW rotation per command
 #define RIGHT_TURN_ANGLE     45.0f     // degrees - CW rotation per command
 
 // Teleoperator Mode - Speeds
 #define TELEOP_SPEED         300.0f    // mm/s - Linear speed
-#define TELEOP_OMEGA         90.0f    // deg/s - Angular speed
+#define TELEOP_OMEGA         50.0f    // deg/s - Angular speed
 
 // Teleoperator Mode - Accelerations
-#define TELEOP_ACC           100.0f    // mm/s² - Linear acceleration
+#define TELEOP_ACC           200.0f    // mm/s² - Linear acceleration
 #define TELEOP_ALPHA         30.0f    // deg/s² - Angular acceleration
 
 #endif // CONFIG_H
