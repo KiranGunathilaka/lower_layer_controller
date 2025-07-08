@@ -52,7 +52,7 @@ typedef enum
     RX_ECHO = 2,
     MD_AND_ECHO = 3,
 } debugMode;
-static uint8_t debug_mode =RX_ECHO;
+static uint8_t debug_mode = MOTION_DEBUG;
 
 typedef enum
 {
@@ -62,7 +62,9 @@ typedef enum
     NONETELEOP = 3,
 } teleOpStates;
 static uint8_t teleStates = NONETELEOP;
+
 static uint8_t last_command = 0;
+static uint8_t current_command =0;
 
 static bool f, b, l, r;
 
@@ -176,12 +178,13 @@ int main(void)
                         else if (teleStates == DECELERATING)
                         {
                             teleStates = NONETELEOP;
+							motion_reset_drive_system();
                         }
                     }
 
-                    if (teleStates == CONSTANT)
+                    else
                     {
-                        motors_update(motion_velocity(), motion_omega());
+	                    motors_update(motion_velocity(), motion_omega());
                     }
                 }
             }
@@ -192,10 +195,10 @@ int main(void)
 
             if (debug_mode == MOTION_DEBUG || debug_mode == MD_AND_ECHO)
             {
-                //send_debug();
+                send_debug();
             }
 
-            //send_telemetry(emerg, profile_done);
+            send_telemetry(emerg, profile_done);
         }
     }
 }
@@ -387,7 +390,7 @@ static void receive_from_jetson(void)
 
                     if (debug_mode == RX_ECHO || debug_mode == MD_AND_ECHO)
                     {
-                        //send_cmd_echo();
+                        send_cmd_echo();
                     }
 
                     if (control_mode == AUTONOMOUS)
@@ -420,23 +423,24 @@ static void receive_from_jetson(void)
                     }
                     else if (control_mode == TELEOPERATOR)
                     {
-                        uint8_t current_command = (f << 3) | (b << 2) | (l << 1) | r;
+                        current_command = (f << 3) | (b << 2) | (l << 1) | r;
+						
+						bool need_new_profile =
+						(current_command && teleStates == NONETELEOP);
 
-                        if (current_command && (teleStates == NONETELEOP))
+                        if (need_new_profile)
                         {
-                            teleStates = ACCELERATING;
+							teleStates = ACCELERATING;
                             motion_reset_drive_system();
 							
                             if (f)
                             {
                                 determineFinishnes = FORWARD;
-								send_cmd_echo();
                                 motion_start_move(FORWARD_DIST, TELEOP_SPEED, TELEOP_SPEED, TELEOP_ACC);
                             }
                             else if (b)
                             {
                                 determineFinishnes = FORWARD;
-								send_cmd_echo();
                                 motion_start_move(-BACKWARD_DIST, TELEOP_SPEED, TELEOP_SPEED, TELEOP_ACC);
                             }
                             else if (l)
@@ -452,7 +456,7 @@ static void receive_from_jetson(void)
 
                             profile_done = false;
                         }
-                        else if ((current_command != last_command) && (teleStates != DECELERATING) && (teleStates != NONETELEOP))
+                        else if ((current_command != last_command) && ((teleStates != DECELERATING) && (teleStates != NONETELEOP)))
                         {
                             teleStates = DECELERATING;
                             motion_SOFT_reset_drive_system();
