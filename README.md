@@ -83,10 +83,7 @@ The tele-operator logic is a compact Mealy machine with **four states** and **fo
 3. **`CONSTANT`** → cruise at steady velocity  
 4. **`DECELERATING`** → brake to a smooth stop  
 
-<p align="center">
-  <!-- TODO: insert diagram -->
-  <em>(state-machine diagram placeholder)</em>
-</p>
+![Alt text](images/state.jpg)
 
 Each new key-press combination (`f b l r`) triggers a transition. The handler decides whether to regenerate a fresh profile or decelerate gently before accepting the next command—keeping ride smooth and preventing stepper stalls.
 
