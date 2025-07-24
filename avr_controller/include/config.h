@@ -23,7 +23,7 @@
 // Steps per revolution (full-step mode)
 #define STEPS_PER_REV 200U
 
-/* ---------- LEFT motor (M1) – now on Timer-3 / OC3A (PC6 / Arduino D5) ---------- */
+/* ---------- LEFT motor (M1)  now on Timer-3 / OC3A (PC6 / Arduino D5) ---------- */
 //  PUL- -> D5  = PC6 / OC3A
 //  DIR- -> D12 = PD6
 //  ENA- -> D10 = PB6   (active-HIGH in inverted logic)
@@ -154,16 +154,16 @@
 
 
 //---------------------------------------------ANALOG-------------------------------------------------
-/* 0-7  = PF0…PF7,   8-13 = PB4…PB7                       */
-#define ADC_CH_BAT_MAIN     0   // PF0  – main battery divider
-#define ADC_CH_BAT_AUX      1   // PF1  – aux battery divider
-#define ADC_CH_CLIFF_LEFT   4   // PF4  – Sharp IR left
-#define ADC_CH_CLIFF_FRONT  5   // PF5  – Sharp IR centre
-#define ADC_CH_CLIFF_RIGHT  6   // PF6  – Sharp IR right
+/* 0-7  = PF0ï¿½PF7,   8-13 = PB4ï¿½PB7                       */
+#define ADC_CH_BAT_MAIN     0   // PF0  ï¿½ main battery divider
+#define ADC_CH_BAT_AUX      1   // PF1  ï¿½ aux battery divider
+#define ADC_CH_CLIFF_LEFT   4   // PF4  ï¿½ Sharp IR left
+#define ADC_CH_CLIFF_FRONT  5   // PF5  ï¿½ Sharp IR centre
+#define ADC_CH_CLIFF_RIGHT  6   // PF6  ï¿½ Sharp IR right
 
 /* ---------- Conversion parameters --------------------- */
 #define ADC_NUM_SAMPLES     4   // simple software average
-#define ADC_PRESCALER_BITS  ((1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0)) /* ÷128 */
+#define ADC_PRESCALER_BITS  ((1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0)) /* ï¿½128 */
 
 /* ---------- Battery-scaling maths --------------------- *
  *   VBAT =  ADCraw * (AVcc / 1023) * (R1+R2) / R2
@@ -227,7 +227,7 @@
 #define TELEOP_OMEGA         50.0f    // deg/s - Angular speed
 
 // Teleoperator Mode - Accelerations
-#define TELEOP_ACC           200.0f    // mm/s² - Linear acceleration
-#define TELEOP_ALPHA         30.0f    // deg/s² - Angular acceleration
+#define TELEOP_ACC           200.0f    // mm/sï¿½ - Linear acceleration
+#define TELEOP_ALPHA         30.0f    // deg/sï¿½ - Angular acceleration
 
 #endif // CONFIG_H
